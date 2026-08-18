@@ -1,0 +1,69 @@
+<meta charset="utf-8"><title>Meet DOM simulator</title>
+<div id="err" style="position:fixed;bottom:0;left:0;right:0;background:#fdd;color:#900;font:12px monospace;z-index:99;padding:4px"></div>
+<div style="background:#202124;color:#fff;min-height:100vh;padding:20px;font-family:sans-serif">
+  <h3>Meet DOM simulator（難読化クラスなし / Trusted Types 有効）</h3>
+
+  <!-- おとり: CC ボタンや設定メニューにも aria-label に「字幕」が入る -->
+  <button aria-label="字幕をオフにする">CC</button>
+  <div role="button" aria-label="字幕の設定を開く" tabindex="0" style="display:inline-block;border:1px solid #666;padding:4px">設定</div>
+  <span aria-label="字幕" role="tab" style="border:1px solid #666;padding:4px">おとりタブ</span>
+
+  <!-- 本物の字幕リージョン: aria-label + 内側に aria-live、クラス名は無関係な文字列 -->
+  <div aria-label="字幕" role="region" class="xyz-random-123" style="background:#000;padding:12px;margin-top:12px">
+    <div class="wrapper-a"><div class="wrapper-b"><div class="rows" aria-live="polite"></div></div></div>
+  </div>
+</div>
+<script>
+window.MCF_FORCE = true;
+window.addEventListener('error', e => {
+  document.getElementById('err').textContent += ' ERROR: ' + e.message;
+});
+if (location.search.includes('en')) {
+  document.querySelector('[role="region"]').setAttribute('aria-label', 'Captions');
+  document.querySelector('button[aria-label]').setAttribute('aria-label', 'Turn off captions');
+  document.querySelector('[role="tab"]').setAttribute('aria-label', 'Captions');
+}
+if (location.search.includes('onlydecoy')) {
+  /* おとり(ボタン/タブ)だけが aria-label を持つ状態。誤検出しないことの確認用 */
+  const r = document.querySelector('[role="region"]');
+  r.removeAttribute('aria-label');
+  document.querySelector('.rows').removeAttribute('aria-live');
+}
+if (location.search.includes('nolabel')) {
+  /* aria-label が消えた将来の DOM を想定したフォールバック検証 */
+  document.querySelectorAll('[aria-label]').forEach(el => el.removeAttribute('aria-label'));
+}
+const inner = document.querySelector('.rows');
+const SPEAKERS = ['山本有悟', '田中太郎'];
+const WORDS = ['これはテストの字幕です。', 'aria-label ベースで検出できるか確認中。', '長い発話が続くと折り返します。'];
+let n = 0, buf = '';
+function newRow(name) {
+  const r = document.createElement('div');
+  const av = document.createElement('img'); av.alt = name; av.width = 1; av.height = 1;
+  const nm = document.createElement('div'); nm.textContent = name; nm.style.color = '#aaa';
+  const holder = document.createElement('div');
+  const sp = document.createElement('span');
+  holder.appendChild(sp); r.appendChild(av); r.appendChild(nm); r.appendChild(holder); inner.appendChild(r);
+  while (inner.children.length > 3) inner.firstElementChild.remove();
+  return sp;
+}
+let span = newRow(SPEAKERS[0]);
+function tick() {
+  n++;
+  buf += WORDS[n % WORDS.length].slice(0, 8);
+  span.textContent = buf;
+  if (n % 4 === 0) { buf = ''; span = newRow(SPEAKERS[(n / 4) % 2]); }
+}
+for (let i = 0; i < 14; i++) tick();
+const iv = setInterval(() => { tick(); if (n > 60) clearInterval(iv); }, 400);
+</script>
+<script src="meet-caption-fullscreen.js"></script>
+<script>
+if (location.search.includes('autoclick')) {
+  const btns = [...document.querySelectorAll('#mcf-bar button')];
+  ['plus','plus','minus','copy','copylog','log'].forEach(a => {
+    try { btns.find(b=>b.dataset.a===a).click(); }
+    catch(e){ document.getElementById('err').textContent += ' CLICK_ERROR('+a+'): '+e.message; }
+  });
+}
+</script>
