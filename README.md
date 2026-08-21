@@ -118,27 +118,18 @@ uv run build.py
 
 ### 動作確認
 
-Meet と同じ CSP を付けたローカルサーバーと、字幕 DOM のシミュレータで検証できます。
+動作確認は**実際の Google Meet の会議で行ってください**。字幕の DOM は Meet 側の実装に依存し、
+CSP (Trusted Types)・字幕リージョンの構造・ラベル文言・行ノードの再利用など、
+再現環境では正しく再現できない要素が多いためです。
+
+`--remote-debugging-port=9222` で起動したブラウザに CDP で接続すると、会議中の DOM を
+そのまま観測しながら本体を注入して確認できます。確認する際は、オーバーレイのログ
+（`ログ表示`）だけでなく、**ページ例外**（`Runtime.evaluate` の例外や DevTools コンソール）も
+必ず見てください。
 
 ```bash
-uv run serve_csp.py 8765     # require-trusted-types-for 'script'; style-src 'self' を付与
-# http://localhost:8765/test-meet-dom.html?autoclick
-```
-
-| クエリ | 検証内容 |
-| --- | --- |
-| （なし） | 字幕の検出・表示・履歴蓄積 |
-| `?autoclick` | ツールバー全ボタンを自動クリックして例外が出ないか |
-| `?en` | 英語 UI（`aria-label="Captions"`）で検出できるか |
-| `?ccoff` | 字幕 OFF 状態で誤検出せず、案内を出すか |
-| `?recycle` | 行ノードが別発話に再利用されても履歴が上書きされないか |
-
-ヘッドレス Chrome での確認例。字幕のログだけでなく、シミュレータが `window.onerror` を出す
-`#err` の中身も確認してください。
-
-```bash
-google-chrome --headless=new --screenshot=shot.png --window-size=1400,760 \
-  "http://localhost:8765/test-meet-dom.html?autoclick"
+# 会議中のタブを探す
+curl -s http://localhost:9222/json/list | grep -o '"url": "https://meet[^"]*'
 ```
 
 ## 対応環境
