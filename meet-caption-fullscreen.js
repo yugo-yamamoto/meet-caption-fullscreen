@@ -18,6 +18,8 @@
   var rowIds = new WeakMap();
   var seq = 0;
   var container = null;
+  var containerWeak = false;
+  var emptyChecks = 0;
   var observer = null;
   var autoScroll = true;
   var logLines = [];
@@ -132,7 +134,7 @@
 
   function labelCandidates(re) {
     return [].filter.call(document.querySelectorAll('[aria-label]'), function (el) {
-      if (ov.contains(el) || isInteractive(el)) return false;
+      if (ov.contains(el) || isInteractive(el) || isRejected(el)) return false;
       var label = el.getAttribute('aria-label') || '';
       return re.test(label) && !LABEL_ACTION.test(label);
     });
@@ -149,6 +151,10 @@
     return scored.length ? scored[0].el : null;
   }
 
+  /* 弱い戦略(フォールバック)で掴んだが発話が取れなかった要素は除外していく */
+  var rejected = [];
+  function isRejected(el) { return rejected.indexOf(el) >= 0; }
+
   function findContainer() {
     var byLabel = pickBest(labelCandidates(LABEL_EXACT));
     if (byLabel) { strategy = 'aria-label 完全一致 ("' + byLabel.getAttribute('aria-label') + '")'; return byLabel; }
@@ -158,19 +164,20 @@
     }));
     if (loose) { strategy = 'aria-label 部分一致 ("' + loose.getAttribute('aria-label') + '")'; return loose; }
 
+    /* 字幕が OFF のうちは（「字幕をオンにする」ボタンが存在する間は）曖昧なフォールバックを
+       使わない。無関係なリージョンを掴んで CC の自動 ON を妨げるのを防ぐ */
+    if (findCaptionButton()) { strategy = ''; return null; }
+
     /* フォールバック1: 画面に見えているライブリージョンでテキスト量が最大のもの */
     var live = [].filter.call(document.querySelectorAll('[aria-live="polite"],[aria-live="assertive"]'), function (el) {
-      return !ov.contains(el) && !isInteractive(el) && !isAnnouncer(el) && textLen(el) > 0;
+      return !ov.contains(el) && !isInteractive(el) && !isAnnouncer(el) && !isRejected(el) && textLen(el) > 0;
     });
     live.sort(function (a, b) { return textLen(b) - textLen(a); });
     if (live.length) { strategy = 'aria-live フォールバック'; return live[0]; }
 
-    /* フォールバック2: ラベルが変わった場合に備え、可視の role=region でテキスト量最大のもの */
-    var region = [].filter.call(document.querySelectorAll('[role="region"]'), function (el) {
-      return !ov.contains(el) && !isInteractive(el) && isVisible(el) && textLen(el) > 0;
-    });
-    region.sort(function (a, b) { return textLen(b) - textLen(a); });
-    if (region.length) { strategy = 'role=region フォールバック'; return region[0]; }
+    /* role=region による推測は行わない。実機で「会議の詳細」など無関係なリージョンを掴み、
+       静的なテキストを発話として表示してしまうため（字幕が見つからないほうが安全） */
+    strategy = '';
     return null;
   }
 
@@ -335,6 +342,8 @@
         container = c;
         if (observer) { observer.disconnect(); observer = null; }
         if (container) {
+          containerWeak = strategy.indexOf('フォールバック') >= 0;
+          emptyChecks = 0;
           log('字幕コンテナを検出 [' + strategy + '] <' + container.tagName.toLowerCase() + '>');
           observer = new MutationObserver(function () { sync(); });
           observer.observe(container, { childList: true, subtree: true, characterData: true });
@@ -344,7 +353,19 @@
     }
 
     var rows = findRows(container);
-    if (!rows.length) enableCaptions(false);
+    if (!rows.length) {
+      enableCaptions(false);
+      /* フォールバックで掴んだだけの要素が字幕でなかった場合は候補から外して再検出する */
+      if (containerWeak && ++emptyChecks >= 4) {
+        log('[' + strategy + '] の候補から発話が取れないため除外して再検出します');
+        rejected.push(container);
+        if (observer) { observer.disconnect(); observer = null; }
+        container = null;
+        return;
+      }
+    } else {
+      emptyChecks = 0;
+    }
     var stick = autoScroll && nearBottom();
     var changed = false;
 
@@ -447,7 +468,17 @@
   }
   document.addEventListener('keydown', onKey, true);
 
-  var timer = setInterval(sync, 700);
+  var noticeShown = false;
+  var startedAt = Date.now();
+  var timer = setInterval(function () {
+    sync();
+    if (!container && !noticeShown && Date.now() - startedAt > 8000) {
+      noticeShown = true;
+      log('字幕エリアが見つかりません。Meet 右下の「その他のオプション」→「字幕を表示」から ON にしてください。');
+      empty.textContent = '字幕エリアが見つかりません。Meet 側で字幕(CC)を ON にしてから「字幕ON」を押してください。';
+    }
+    if (container && noticeShown) { noticeShown = false; }
+  }, 700);
 
   ov.__mcfClose = function () {
     clearInterval(timer);
