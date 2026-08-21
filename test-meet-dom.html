@@ -3,40 +3,27 @@
 <div style="background:#202124;color:#fff;min-height:100vh;padding:20px;font-family:sans-serif">
   <h3>Meet DOM simulator（難読化クラスなし / Trusted Types 有効）</h3>
 
-  <!-- おとり: CC ボタンや設定メニューにも aria-label に「字幕」が入る -->
-  <button aria-label="字幕をオフにする">CC</button>
+  <!-- おとり: 設定メニューやタブにも aria-label に「字幕」が入る -->
   <div role="button" aria-label="字幕の設定を開く" tabindex="0" style="display:inline-block;border:1px solid #666;padding:4px">設定</div>
   <span aria-label="字幕" role="tab" style="border:1px solid #666;padding:4px">おとりタブ</span>
+  <!-- 字幕(CC)トグル。既定は ON 状態（=「オフにする」ラベル） -->
+  <button id="cc" aria-label="字幕をオフにする">CC</button>
+  <span id="ccstate" style="margin-left:8px;color:#8f8">captions: on</span>
 
-  <!-- 本物の字幕リージョン: aria-label + 内側に aria-live、クラス名は無関係な文字列 -->
-  <div aria-label="字幕" role="region" class="xyz-random-123" style="background:#000;padding:12px;margin-top:12px">
-    <div class="wrapper-a"><div class="wrapper-b"><div class="rows" aria-live="polite"></div></div></div>
-  </div>
+  <div id="mount" style="margin-top:12px"></div>
 </div>
 <script>
 window.MCF_FORCE = true;
-window.addEventListener('error', e => {
-  document.getElementById('err').textContent += ' ERROR: ' + e.message;
-});
-if (location.search.includes('en')) {
-  document.querySelector('[role="region"]').setAttribute('aria-label', 'Captions');
-  document.querySelector('button[aria-label]').setAttribute('aria-label', 'Turn off captions');
-  document.querySelector('[role="tab"]').setAttribute('aria-label', 'Captions');
-}
-if (location.search.includes('onlydecoy')) {
-  /* おとり(ボタン/タブ)だけが aria-label を持つ状態。誤検出しないことの確認用 */
-  const r = document.querySelector('[role="region"]');
-  r.removeAttribute('aria-label');
-  document.querySelector('.rows').removeAttribute('aria-live');
-}
-if (location.search.includes('nolabel')) {
-  /* aria-label が消えた将来の DOM を想定したフォールバック検証 */
-  document.querySelectorAll('[aria-label]').forEach(el => el.removeAttribute('aria-label'));
-}
-const inner = document.querySelector('.rows');
+const err = document.getElementById('err');
+window.addEventListener('error', e => { err.textContent += ' ERROR: ' + e.message; });
+
+const q = location.search;
 const SPEAKERS = ['山本有悟', '田中太郎'];
 const WORDS = ['これはテストの字幕です。', 'aria-label ベースで検出できるか確認中。', '長い発話が続くと折り返します。'];
-let n = 0, buf = '';
+const ccBtn = document.getElementById('cc');
+const ccState = document.getElementById('ccstate');
+let inner = null, span = null, n = 0, buf = '', iv = null;
+
 function newRow(name) {
   const r = document.createElement('div');
   const av = document.createElement('img'); av.alt = name; av.width = 1; av.height = 1;
@@ -47,23 +34,71 @@ function newRow(name) {
   while (inner.children.length > 3) inner.firstElementChild.remove();
   return sp;
 }
-let span = newRow(SPEAKERS[0]);
 function tick() {
   n++;
   buf += WORDS[n % WORDS.length].slice(0, 8);
   span.textContent = buf;
   if (n % 4 === 0) { buf = ''; span = newRow(SPEAKERS[(n / 4) % 2]); }
 }
-for (let i = 0; i < 14; i++) tick();
-const iv = setInterval(() => { tick(); if (n > 60) clearInterval(iv); }, 400);
+/* 字幕 ON 時の DOM を組む。クラス名は無関係な文字列にして、判定が aria 属性と構造だけで
+   成立することを確認する */
+function mountRegion() {
+  const region = document.createElement('div');
+  region.setAttribute('aria-label', q.includes('en') ? 'Captions' : '字幕');
+  region.setAttribute('role', 'region');
+  region.className = 'xyz-random-123';
+  region.style.cssText = 'background:#000;padding:12px';
+  const w1 = document.createElement('div'); w1.className = 'wrapper-a';
+  const w2 = document.createElement('div'); w2.className = 'wrapper-b';
+  const rows = document.createElement('div'); rows.className = 'rows';
+  rows.setAttribute('aria-live', 'polite');
+  w2.appendChild(rows); w1.appendChild(w2); region.appendChild(w1);
+  document.getElementById('mount').appendChild(region);
+  inner = rows;
+
+  if (q.includes('onlydecoy')) { region.removeAttribute('aria-label'); rows.removeAttribute('aria-live'); }
+  if (q.includes('nolabel')) { document.querySelectorAll('[aria-label]').forEach(el => el.removeAttribute('aria-label')); }
+
+  span = newRow(SPEAKERS[0]);
+  for (let i = 0; i < 14; i++) tick();          /* スクリーンショット用に同期で数発話ぶん作る */
+  iv = setInterval(() => { tick(); if (n > 60) clearInterval(iv); }, 400);
+}
+
+ccBtn.addEventListener('click', () => {
+  const on = ccBtn.getAttribute('aria-label').includes('オフ') || /Turn off/i.test(ccBtn.getAttribute('aria-label'));
+  if (on) {   /* ON → OFF */
+    if (iv) clearInterval(iv);
+    document.getElementById('mount').textContent = '';
+    ccBtn.setAttribute('aria-label', q.includes('en') ? 'Turn on captions' : '字幕をオンにする');
+    ccState.textContent = 'captions: off'; ccState.style.color = '#f88';
+  } else {    /* OFF → ON */
+    ccBtn.setAttribute('aria-label', q.includes('en') ? 'Turn off captions' : '字幕をオフにする');
+    ccState.textContent = 'captions: on (ボタン経由で ON)'; ccState.style.color = '#8f8';
+    n = 0; buf = '';
+    mountRegion();
+  }
+});
+
+if (q.includes('en')) {
+  ccBtn.setAttribute('aria-label', 'Turn off captions');
+  document.querySelector('[role="tab"]').setAttribute('aria-label', 'Captions');
+  document.querySelector('[role="button"]').setAttribute('aria-label', 'Open captions settings');
+}
+if (q.includes('ccoff')) {
+  /* 字幕 OFF の状態から開始。ブックマークレットが CC ボタンを押して ON にできるかを見る */
+  ccBtn.setAttribute('aria-label', q.includes('en') ? 'Turn on captions' : '字幕をオンにする');
+  ccState.textContent = 'captions: off'; ccState.style.color = '#f88';
+} else {
+  mountRegion();
+}
 </script>
 <script src="meet-caption-fullscreen.js"></script>
 <script>
-if (location.search.includes('autoclick')) {
+if (q.includes('autoclick')) {
   const btns = [...document.querySelectorAll('#mcf-bar button')];
   ['plus','plus','minus','copy','copylog','log'].forEach(a => {
     try { btns.find(b=>b.dataset.a===a).click(); }
-    catch(e){ document.getElementById('err').textContent += ' CLICK_ERROR('+a+'): '+e.message; }
+    catch(e){ err.textContent += ' CLICK_ERROR('+a+'): '+e.message; }
   });
 }
 </script>

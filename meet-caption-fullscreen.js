@@ -53,7 +53,7 @@
 
   var ov = el('div', { id: ID });
   var bar = el('div', { id: 'mcf-bar' }, ov);
-  [['minus', 'A-'], ['plus', 'A+'], ['copy', '\u5168\u6587\u30b3\u30d3\u30fc'], ['clear', '\u5c65\u6b74\u30af\u30ea\u30a2'],
+  [['minus', 'A-'], ['plus', 'A+'], ['cc', '\u5b57\u5e55ON'], ['copy', '\u5168\u6587\u30b3\u30d3\u30fc'], ['clear', '\u5c65\u6b74\u30af\u30ea\u30a2'],
    ['log', '\u30ed\u30b0\u8868\u793a'], ['copylog', '\u30ed\u30b0\u30b3\u30d4\u30fc'], ['close', '\u9589\u3058\u308b (Esc)']]
     .forEach(function (b) { el('button', { 'data-a': b[0], text: b[1] }, bar); });
   var stat = el('span', { 'class': 'mcf-stat' }, bar);
@@ -149,6 +149,47 @@
     return null;
   }
 
+  /* 「字幕をオンにする」系のボタン。OFF 側("オフにする")を押さないよう厳密に見る */
+  var BTN_ON = /オンにする|表示する|turn on|enable|activate/i;
+  var BTN_OFF = /オフにする|非表示|turn off|disable|deactivate/i;
+  var ccTries = 0;
+  var ccLast = 0;
+
+  function findCaptionButton() {
+    var btns = document.querySelectorAll('button,[role="button"],[role="menuitem"],[role="checkbox"],[role="switch"]');
+    return [].filter.call(btns, function (el) {
+      if (ov.contains(el) || el.disabled) return false;
+      var label = (el.getAttribute('aria-label') || el.getAttribute('data-tooltip') || el.title || '').trim();
+      if (!label || !LABEL_LOOSE.test(label)) return false;
+      return BTN_ON.test(label) && !BTN_OFF.test(label);
+    })[0] || null;
+  }
+
+  /* 字幕が OFF のときは CC ボタンを押して ON にする（最大 3 回、3 秒間隔） */
+  function enableCaptions(manual) {
+    var now = Date.now();
+    if (!manual) {
+      if (ccTries >= 3) return false;
+      if (now - ccLast < 3000) return false;
+    }
+    var btn = findCaptionButton();
+    if (!btn) {
+      if (manual) log('「字幕をオンにする」ボタンが見つかりません（既に ON か、メニュー内に隠れています）');
+      return false;
+    }
+    ccLast = now;
+    ccTries++;
+    var label = btn.getAttribute('aria-label') || btn.title || '';
+    try {
+      btn.click();
+      log('字幕が OFF だったので ON にしました: "' + label + '"' + (manual ? '' : ' (自動 ' + ccTries + '/3)'));
+      return true;
+    } catch (e) {
+      log('字幕ボタンのクリックに失敗: ' + e.message);
+      return false;
+    }
+  }
+
   function findRows(c) {
     /* 字幕本体はライブリージョン内にある。無ければコンテナ自身を起点にする */
     var root = c.matches('[aria-live]') ? c : (c.querySelector('[aria-live]') || c);
@@ -177,7 +218,11 @@
       }
       text = leaves.map(function (el) { return (el.innerText || '').trim(); }).join(' ');
     } else if (leaves.length === 1) {
-      text = (leaves[0].innerText || '').trim();
+      /* 発話開始直後は話者名だけが存在する。アバターの alt と一致すれば名前として扱い、
+         本文は空のままにして (テキストが来るまで) 履歴に積まない */
+      var only = (leaves[0].innerText || '').trim();
+      var alt0 = row.querySelector('img[alt]');
+      if (alt0 && (alt0.alt || '').trim() === only) { name = only; } else { text = only; }
     } else {
       /* 末端が取れない構造では innerText を行単位で分解する */
       var all = (row.innerText || '').trim();
@@ -190,6 +235,7 @@
       var av = row.querySelector('img[alt]');
       if (av && av.alt && av.alt.trim().length <= 30) name = av.alt.trim();
     }
+    if (name && text.indexOf(name) === 0) text = text.slice(name.length).trim();
     return { name: name.replace(/\s*\n\s*/g, ' '), text: text.replace(/\s*\n\s*/g, ' ').trim() };
   }
 
@@ -226,10 +272,11 @@
           observer.observe(container, { childList: true, subtree: true, characterData: true });
         }
       }
-      if (!container) return;
+      if (!container) { enableCaptions(false); return; }
     }
 
     var rows = findRows(container);
+    if (!rows.length) enableCaptions(false);
     var stick = autoScroll && nearBottom();
     var changed = false;
 
@@ -245,6 +292,7 @@
           rowIds.set(row, last.id);
           last.row = row;
           if (last.text !== p.text) { last.text = p.text; last.textEl.textContent = p.text; changed = true; }
+          if (p.name && last.name !== p.name) { last.name = p.name; last.nameEl.textContent = p.name; changed = true; }
           return;
         }
         id = ++seq;
@@ -296,6 +344,7 @@
     if (!a) return;
     if (a === 'plus') { fontSize = Math.min(160, fontSize + 4); applyFont(); log('文字サイズ ' + fontSize + 'px'); }
     else if (a === 'minus') { fontSize = Math.max(14, fontSize - 4); applyFont(); log('文字サイズ ' + fontSize + 'px'); }
+    else if (a === 'cc') { ccTries = 0; if (enableCaptions(true)) setTimeout(sync, 800); }
     else if (a === 'copy') { copy(transcript(), '字幕全文'); }
     else if (a === 'copylog') { copy(logLines.join('\n'), 'ログ'); }
     else if (a === 'clear') {
@@ -319,7 +368,7 @@
   });
 
   function onKey(ev) {
-    if (ev.key === 'Escape' && !document.fullscreenElement) { ov.__mcfClose(); }
+    if (ev.key === 'Escape') { ov.__mcfClose(); }
   }
   document.addEventListener('keydown', onKey, true);
 
@@ -329,15 +378,9 @@
     clearInterval(timer);
     if (observer) observer.disconnect();
     document.removeEventListener('keydown', onKey, true);
-    if (document.fullscreenElement === ov) { document.exitFullscreen().catch(function () {}); }
     ov.remove(); css.remove();
   };
 
-  if (ov.requestFullscreen) {
-    ov.requestFullscreen().then(function () { log('全画面表示に入りました'); },
-      function (e) { log('全画面API失敗 (画面全体を覆う表示で継続): ' + e.message); });
-  }
-
-  log('起動しました。Meet の字幕(CC)を ON にしてください。');
+  log('起動しました。字幕が OFF なら自動で ON にします。');
   sync();
 })();
