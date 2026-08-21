@@ -250,6 +250,28 @@
     return false;
   }
 
+  /* Meet の「会議の言語」が話している言語と違うと、字幕は ON でもほとんど出ない
+     （英語設定のまま日本語で話すと無音同然になる）。起動時に必ずログへ出す */
+  function captionLanguage() {
+    var c = document.querySelector('[role="combobox"][aria-label*="会議の言語"],' +
+                                   '[role="combobox"][aria-label*="Meeting language"],' +
+                                   '[role="combobox"][aria-label*="言語"]');
+    if (!c) return '';
+    return (c.innerText || '').replace(/^\s*language\s*/i, '').replace(/\s+/g, ' ').trim();
+  }
+
+  function reportLanguage() {
+    var lang = captionLanguage();
+    if (!lang) { return; }
+    var uiJa = /^ja/i.test(document.documentElement.lang || navigator.language || '');
+    if (uiJa && !/日本語|Japanese/.test(lang)) {
+      log('注意: 会議の言語が「' + lang + '」です。日本語で話しても字幕が出ません。' +
+          'Meet の「字幕設定を開く」から会議の言語を日本語に変更してください。');
+    } else {
+      log('会議の言語: ' + lang);
+    }
+  }
+
   function findRows(c) {
     /* 字幕本体はライブリージョン内にある。無ければコンテナ自身を起点にする */
     var live = c.matches('[aria-live]') && !isAnnouncer(c) ? c
@@ -491,5 +513,6 @@
   };
 
   log('起動しました。字幕が OFF なら自動で ON にします。');
+  reportLanguage();
   sync();
 })();
