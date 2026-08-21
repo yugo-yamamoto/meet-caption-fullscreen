@@ -1,13 +1,20 @@
 <meta charset="utf-8"><title>Meet DOM simulator</title>
 <div id="err" style="position:fixed;bottom:0;left:0;right:0;background:#fdd;color:#900;font:12px monospace;z-index:99;padding:4px"></div>
-<div style="background:#202124;color:#fff;min-height:100vh;padding:20px;font-family:sans-serif">
-  <h3>Meet DOM simulator（難読化クラスなし / Trusted Types 有効）</h3>
 
-  <!-- おとり: 設定メニューやタブにも aria-label に「字幕」が入る -->
-  <div role="button" aria-label="字幕の設定を開く" tabindex="0" style="display:inline-block;border:1px solid #666;padding:4px">設定</div>
-  <span aria-label="字幕" role="tab" style="border:1px solid #666;padding:4px">おとりタブ</span>
-  <!-- 字幕(CC)トグル。既定は ON 状態（=「オフにする」ラベル） -->
-  <button id="cc" aria-label="字幕をオフにする">CC</button>
+<!-- 実測: Meet はスクリーンリーダー用に画面外のライブリージョンを持つ（字幕本体ではない） -->
+<div aria-atomic="true" aria-live="polite" data-mdc-dom-announce="true"
+     style="position:absolute;top:-9999px;inset-inline-start:-9999px;height:1px;overflow:hidden">自動字幕起こしがオンになっています</div>
+<div role="status" aria-live="polite" style="position:absolute;top:-9999px;height:1px;overflow:hidden">読み込み中...</div>
+
+<div style="background:#202124;color:#fff;min-height:100vh;padding:20px;font-family:sans-serif">
+  <h3>Meet DOM simulator（実測 DOM 準拠 / 難読化クラスなし / Trusted Types 有効）</h3>
+
+  <!-- 実測で存在したおとり群 -->
+  <div role="combobox" aria-label="字幕の種類" style="display:inline-block;border:1px solid #666;padding:4px">字幕を表示</div>
+  <ul role="listbox" aria-label="字幕の種類" style="display:inline-block;border:1px solid #666;padding:4px;list-style:none">
+    <li>字幕を表示</li><li>字幕の翻訳</li></ul>
+  <button aria-label="字幕設定を開く">settings</button>
+  <button id="cc" aria-label="字幕をオフにする">closed_caption</button>
   <span id="ccstate" style="margin-left:8px;color:#8f8">captions: on</span>
 
   <div id="mount" style="margin-top:12px"></div>
@@ -18,8 +25,8 @@ const err = document.getElementById('err');
 window.addEventListener('error', e => { err.textContent += ' ERROR: ' + e.message; });
 
 const q = location.search;
-const SPEAKERS = ['山本有悟', '田中太郎'];
-const WORDS = ['これはテストの字幕です。', 'aria-label ベースで検出できるか確認中。', '長い発話が続くと折り返します。'];
+const SPEAKERS = ['あなた', '田中太郎'];
+const WORDS = ['テストテスト。', 'aria-label ベースで検出できるか確認中。', '長い発話が続くと折り返します。'];
 const ccBtn = document.getElementById('cc');
 const ccState = document.getElementById('ccstate');
 let inner = null, span = null, n = 0, buf = '', iv = null;
@@ -40,24 +47,27 @@ function tick() {
   span.textContent = buf;
   if (n % 4 === 0) { buf = ''; span = newRow(SPEAKERS[(n / 4) % 2]); }
 }
-/* 字幕 ON 時の DOM を組む。クラス名は無関係な文字列にして、判定が aria 属性と構造だけで
-   成立することを確認する */
+/* 実測どおり: role="region" + aria-label="字幕"、内側に aria-live は無い。
+   「最新の字幕に移動」ボタンがリージョン内に同居する */
 function mountRegion() {
   const region = document.createElement('div');
-  region.setAttribute('aria-label', q.includes('en') ? 'Captions' : '字幕');
   region.setAttribute('role', 'region');
-  region.className = 'xyz-random-123';
-  region.style.cssText = 'background:#000;padding:12px';
+  region.setAttribute('aria-label', q.includes('en') ? 'Captions' : '字幕');
+  region.className = 'VYBDae-random-123';
+  region.style.cssText = 'background:#000;padding:12px;min-height:120px';
+  const jump = document.createElement('button');
+  jump.setAttribute('aria-label', '最新の字幕に移動');
+  jump.style.cssText = 'position:absolute;opacity:0';
   const w1 = document.createElement('div'); w1.className = 'wrapper-a';
   const w2 = document.createElement('div'); w2.className = 'wrapper-b';
   const rows = document.createElement('div'); rows.className = 'rows';
-  rows.setAttribute('aria-live', 'polite');
-  w2.appendChild(rows); w1.appendChild(w2); region.appendChild(w1);
+  w2.appendChild(rows); w1.appendChild(w2); region.appendChild(jump); region.appendChild(w1);
   document.getElementById('mount').appendChild(region);
   inner = rows;
 
-  if (q.includes('onlydecoy')) { region.removeAttribute('aria-label'); rows.removeAttribute('aria-live'); }
-  if (q.includes('nolabel')) { document.querySelectorAll('[aria-label]').forEach(el => el.removeAttribute('aria-label')); }
+  if (q.includes('onlydecoy')) region.removeAttribute('aria-label');
+  if (q.includes('nolabel')) document.querySelectorAll('[aria-label]').forEach(el => el.removeAttribute('aria-label'));
+  if (q.includes('noregion')) region.removeAttribute('role');
 
   span = newRow(SPEAKERS[0]);
   for (let i = 0; i < 14; i++) tick();          /* スクリーンショット用に同期で数発話ぶん作る */
@@ -65,13 +75,14 @@ function mountRegion() {
 }
 
 ccBtn.addEventListener('click', () => {
-  const on = ccBtn.getAttribute('aria-label').includes('オフ') || /Turn off/i.test(ccBtn.getAttribute('aria-label'));
-  if (on) {   /* ON → OFF */
+  const label = ccBtn.getAttribute('aria-label');
+  const on = label.includes('オフ') || /Turn off/i.test(label);
+  if (on) {
     if (iv) clearInterval(iv);
     document.getElementById('mount').textContent = '';
     ccBtn.setAttribute('aria-label', q.includes('en') ? 'Turn on captions' : '字幕をオンにする');
     ccState.textContent = 'captions: off'; ccState.style.color = '#f88';
-  } else {    /* OFF → ON */
+  } else {
     ccBtn.setAttribute('aria-label', q.includes('en') ? 'Turn off captions' : '字幕をオフにする');
     ccState.textContent = 'captions: on (ボタン経由で ON)'; ccState.style.color = '#8f8';
     n = 0; buf = '';
@@ -81,11 +92,10 @@ ccBtn.addEventListener('click', () => {
 
 if (q.includes('en')) {
   ccBtn.setAttribute('aria-label', 'Turn off captions');
-  document.querySelector('[role="tab"]').setAttribute('aria-label', 'Captions');
-  document.querySelector('[role="button"]').setAttribute('aria-label', 'Open captions settings');
+  document.querySelectorAll('[aria-label="字幕の種類"]').forEach(e => e.setAttribute('aria-label', 'Caption type'));
+  document.querySelector('button[aria-label="字幕設定を開く"]').setAttribute('aria-label', 'Open caption settings');
 }
 if (q.includes('ccoff')) {
-  /* 字幕 OFF の状態から開始。ブックマークレットが CC ボタンを押して ON にできるかを見る */
   ccBtn.setAttribute('aria-label', q.includes('en') ? 'Turn on captions' : '字幕をオンにする');
   ccState.textContent = 'captions: off'; ccState.style.color = '#f88';
 } else {

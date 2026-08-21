@@ -103,11 +103,27 @@
   var LABEL_EXACT = /^(字幕|キャプション|captions?|subtitles?|sous-titres|untertitel|subtítulos|legendas|자막|자막\s*표시|字幕記録)$/i;
   var LABEL_LOOSE = /字幕|キャプション|caption|subtitle|sous-titre|untertitel|subtítulo|legenda|자막/i;
   /* 「字幕をオンにする」などの操作系ラベルを弾く */
-  var LABEL_ACTION = /オンにする|オフにする|開く|閉じる|設定|変更|turn (on|off)|open|close|settings?|options?|more/i;
+  var LABEL_ACTION = /オンにする|オフにする|開く|閉じる|設定|変更|種類|翻訳|言語|移動|turn (on|off)|open|close|settings?|options?|more|type|language|translat/i;
   var strategy = '';
 
   function isInteractive(el) {
-    return !!el.closest('button,a,[role="button"],[role="menuitem"],[role="tab"],[role="checkbox"],[role="switch"]');
+    return !!el.closest('button,a,input,select,textarea,' +
+      '[role="button"],[role="link"],[role="menu"],[role="menubar"],[role="menuitem"],' +
+      '[role="menuitemcheckbox"],[role="menuitemradio"],[role="combobox"],[role="listbox"],' +
+      '[role="option"],[role="tablist"],[role="tab"],[role="tooltip"],[role="textbox"],' +
+      '[role="slider"],[role="checkbox"],[role="switch"],[role="radio"],[role="radiogroup"]');
+  }
+
+  function isVisible(el) {
+    var r = el.getBoundingClientRect();
+    return r.width > 40 && r.height > 10 && r.right > 0 && r.bottom > 0;
+  }
+
+  /* Meet はスクリーンリーダー用に画面外(-9999px)のライブリージョンを持つ。
+     「自動字幕起こしがオンになっています」等が入るだけなので字幕本体と混同しない */
+  function isAnnouncer(el) {
+    return el.matches('[role="status"],[role="alert"],[role="log"],[aria-atomic="true"],[data-mdc-dom-announce]') ||
+           !isVisible(el);
   }
 
   function textLen(el) {
@@ -125,7 +141,9 @@
   function pickBest(cands) {
     /* aria-live を含むものを優先し、次にテキスト量が多いものを選ぶ */
     var scored = cands.map(function (el) {
-      return { el: el, live: el.matches('[aria-live]') || !!el.querySelector('[aria-live]') ? 1 : 0, len: textLen(el) };
+      var live = el.matches('[aria-live]') ? !isAnnouncer(el)
+                 : [].some.call(el.querySelectorAll('[aria-live]'), function (x) { return !isAnnouncer(x); });
+      return { el: el, live: live ? 1 : 0, len: textLen(el) };
     });
     scored.sort(function (a, b) { return (b.live - a.live) || (b.len - a.len); });
     return scored.length ? scored[0].el : null;
@@ -140,12 +158,19 @@
     }));
     if (loose) { strategy = 'aria-label 部分一致 ("' + loose.getAttribute('aria-label') + '")'; return loose; }
 
-    /* 最後の手段: 画面上のライブリージョンのうちテキスト量が最大のもの */
+    /* フォールバック1: 画面に見えているライブリージョンでテキスト量が最大のもの */
     var live = [].filter.call(document.querySelectorAll('[aria-live="polite"],[aria-live="assertive"]'), function (el) {
-      return !ov.contains(el) && !isInteractive(el);
+      return !ov.contains(el) && !isInteractive(el) && !isAnnouncer(el) && textLen(el) > 0;
     });
     live.sort(function (a, b) { return textLen(b) - textLen(a); });
     if (live.length) { strategy = 'aria-live フォールバック'; return live[0]; }
+
+    /* フォールバック2: ラベルが変わった場合に備え、可視の role=region でテキスト量最大のもの */
+    var region = [].filter.call(document.querySelectorAll('[role="region"]'), function (el) {
+      return !ov.contains(el) && !isInteractive(el) && isVisible(el) && textLen(el) > 0;
+    });
+    region.sort(function (a, b) { return textLen(b) - textLen(a); });
+    if (region.length) { strategy = 'role=region フォールバック'; return region[0]; }
     return null;
   }
 
@@ -192,7 +217,9 @@
 
   function findRows(c) {
     /* 字幕本体はライブリージョン内にある。無ければコンテナ自身を起点にする */
-    var root = c.matches('[aria-live]') ? c : (c.querySelector('[aria-live]') || c);
+    var live = c.matches('[aria-live]') && !isAnnouncer(c) ? c
+      : [].filter.call(c.querySelectorAll('[aria-live]'), function (x) { return !isAnnouncer(x); })[0];
+    var root = live || c;
     /* 子が1つだけのラッパ階層を掘り下げて、発話が並ぶ親まで降りる */
     while (root.children.length === 1 && root.firstElementChild.children.length) {
       root = root.firstElementChild;
