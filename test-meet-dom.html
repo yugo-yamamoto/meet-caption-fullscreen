@@ -29,17 +29,26 @@ const SPEAKERS = ['あなた', '田中太郎'];
 const WORDS = ['テストテスト。', 'aria-label ベースで検出できるか確認中。', '長い発話が続くと折り返します。'];
 const ccBtn = document.getElementById('cc');
 const ccState = document.getElementById('ccstate');
-let inner = null, span = null, n = 0, buf = '', iv = null;
+let inner = null, tail = null, span = null, n = 0, buf = '', iv = null;
 
+/* 実測構造:
+   <div class="nMcdL">
+     <div class="adE6rb"><img alt=""><div class="KcIKyf"><span>あなた</span></div></div>
+     <div class="ygicle VbkSUe">本文…</div>
+   </div>
+   アバターの alt は空なので、名前は「img と同じ枝にある」ことで判定させる */
 function newRow(name) {
-  const r = document.createElement('div');
-  const av = document.createElement('img'); av.alt = name; av.width = 1; av.height = 1;
-  const nm = document.createElement('div'); nm.textContent = name; nm.style.color = '#aaa';
-  const holder = document.createElement('div');
-  const sp = document.createElement('span');
-  holder.appendChild(sp); r.appendChild(av); r.appendChild(nm); r.appendChild(holder); inner.appendChild(r);
-  while (inner.children.length > 3) inner.firstElementChild.remove();
-  return sp;
+  const r = document.createElement('div'); r.className = 'nMcdL bj4p3b';
+  const head = document.createElement('div'); head.className = 'adE6rb';
+  const av = document.createElement('img'); av.alt = ''; av.width = 12; av.height = 12;
+  const nmWrap = document.createElement('div'); nmWrap.className = 'KcIKyf jxFHg';
+  const nm = document.createElement('span'); nm.textContent = name; nm.style.color = '#aaa';
+  nmWrap.appendChild(nm); head.appendChild(av); head.appendChild(nmWrap);
+  const body = document.createElement('div'); body.className = 'ygicle VbkSUe';
+  r.appendChild(head); r.appendChild(body); inner.insertBefore(r, tail);
+  const live = inner.querySelectorAll('.nMcdL');
+  if (live.length > 3) live[0].remove();
+  return body;
 }
 function tick() {
   n++;
@@ -55,15 +64,21 @@ function mountRegion() {
   region.setAttribute('aria-label', q.includes('en') ? 'Captions' : '字幕');
   region.className = 'VYBDae-random-123';
   region.style.cssText = 'background:#000;padding:12px;min-height:120px';
+  /* 実測: リージョン直下は [発話行..., 非表示の空div, 「最新の字幕に移動」ボタン] が並ぶ。
+     ボタン内の aria-hidden なアイコン文字とツールチップ文字を発話として拾わないことを確認する */
+  const hidden = document.createElement('div');
+  hidden.appendChild(Object.assign(document.createElement('div'), { className: 'GvZY2' })).style.display = 'none';
+  const jumpWrap = document.createElement('div'); jumpWrap.className = 'IMKgW';
   const jump = document.createElement('button');
   jump.setAttribute('aria-label', '最新の字幕に移動');
-  jump.style.cssText = 'position:absolute;opacity:0';
-  const w1 = document.createElement('div'); w1.className = 'wrapper-a';
-  const w2 = document.createElement('div'); w2.className = 'wrapper-b';
-  const rows = document.createElement('div'); rows.className = 'rows';
-  w2.appendChild(rows); w1.appendChild(w2); region.appendChild(jump); region.appendChild(w1);
+  const icon = document.createElement('i'); icon.className = 'google-symbols';
+  icon.setAttribute('aria-hidden', 'true'); icon.textContent = 'arrow_downward';
+  const tip = document.createElement('span'); tip.setAttribute('aria-hidden', 'true'); tip.textContent = '一番下に移動';
+  jump.appendChild(icon); jump.appendChild(tip); jumpWrap.appendChild(jump);
+  region.appendChild(hidden); region.appendChild(jumpWrap);
   document.getElementById('mount').appendChild(region);
-  inner = rows;
+  inner = region;        /* 実測どおり発話行はリージョン直下 */
+  tail = hidden;         /* 新しい行はこの前に挿入する */
 
   if (q.includes('onlydecoy')) region.removeAttribute('aria-label');
   if (q.includes('nolabel')) document.querySelectorAll('[aria-label]').forEach(el => el.removeAttribute('aria-label'));

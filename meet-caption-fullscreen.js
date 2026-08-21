@@ -215,6 +215,31 @@
     }
   }
 
+  /* 字幕リージョンには「最新の字幕に移動」ボタン（内側に aria-hidden のアイコン文字や
+     ツールチップ文字を持つ）が同居する。発話本文だけを取るため、aria-hidden と
+     操作系要素の中のテキストは除外する */
+  function isAriaHidden(el) {
+    return !!el.closest('[aria-hidden="true"]');
+  }
+
+  function contentLeaves(el) {
+    if (!el.children.length) {
+      return (textLen(el) > 0 && !isAriaHidden(el) && !isInteractive(el)) ? [el] : [];
+    }
+    return [].filter.call(el.querySelectorAll('*'), function (x) {
+      return x.children.length === 0 && textLen(x) > 0 && !isAriaHidden(x) && !isInteractive(x);
+    });
+  }
+
+  /* アバター画像と同じ枝にあるテキストは話者名（実測: img と名前 span が同じ親に入る）。
+     Meet のアバターは alt="" なので alt では判定できない */
+  function isNameLeaf(row, leaf) {
+    for (var p = leaf.parentElement; p && p !== row; p = p.parentElement) {
+      if (p.querySelector('img,[role="img"]')) return true;
+    }
+    return false;
+  }
+
   function findRows(c) {
     /* 字幕本体はライブリージョン内にある。無ければコンテナ自身を起点にする */
     var live = c.matches('[aria-live]') && !isAnnouncer(c) ? c
@@ -224,32 +249,25 @@
     while (root.children.length === 1 && root.firstElementChild.children.length) {
       root = root.firstElementChild;
     }
-    var rows = [].filter.call(root.children, function (el) { return textLen(el) > 0; });
-    if (!rows.length && textLen(root) > 0) rows = [root];
+    var rows = [].filter.call(root.children, function (el) { return contentLeaves(el).length > 0; });
+    if (!rows.length && contentLeaves(root).length > 0) rows = [root];
     return rows;
   }
 
   function parseRow(row) {
-    /* テキストを持つ末端要素を順に集める。先頭が話者名、残りが発話本文という構造を利用する
+    /* 本文を持つ末端要素を文書順に集める。先頭が話者名、残りが発話本文という構造を利用する
        (行がさらに入れ子でも末端は同じ順に並ぶので深さに依存しない) */
-    var leaves = [].filter.call(row.querySelectorAll('*'), function (el) {
-      return el.children.length === 0 && textLen(el) > 0;
-    });
+    var leaves = contentLeaves(row);
     var name = '', text = '';
 
-    if (leaves.length >= 2) {
+    if (leaves.length) {
       var head = (leaves[0].innerText || '').trim();
-      if (head.length <= 30 && head.indexOf('\n') < 0) {
+      /* アバターと同じ枝にある、または短い先頭要素を話者名とみなす */
+      if (isNameLeaf(row, leaves[0]) || (leaves.length >= 2 && head.length <= 30 && head.indexOf('\n') < 0)) {
         name = head;
         leaves = leaves.slice(1);
       }
       text = leaves.map(function (el) { return (el.innerText || '').trim(); }).join(' ');
-    } else if (leaves.length === 1) {
-      /* 発話開始直後は話者名だけが存在する。アバターの alt と一致すれば名前として扱い、
-         本文は空のままにして (テキストが来るまで) 履歴に積まない */
-      var only = (leaves[0].innerText || '').trim();
-      var alt0 = row.querySelector('img[alt]');
-      if (alt0 && (alt0.alt || '').trim() === only) { name = only; } else { text = only; }
     } else {
       /* 末端が取れない構造では innerText を行単位で分解する */
       var all = (row.innerText || '').trim();
