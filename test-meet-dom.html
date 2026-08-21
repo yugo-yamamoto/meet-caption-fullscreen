@@ -96,10 +96,6 @@ function mountRegion() {
   inner = region;        /* 実測どおり発話行はリージョン直下 */
   tail = hidden;         /* 新しい行はこの前に挿入する */
 
-  if (q.includes('onlydecoy')) region.removeAttribute('aria-label');
-  if (q.includes('nolabel')) document.querySelectorAll('[aria-label]').forEach(el => el.removeAttribute('aria-label'));
-  if (q.includes('noregion')) region.removeAttribute('role');
-
   span = newRow(SPEAKERS[0]);
   for (let i = 0; i < 14; i++) tick();          /* スクリーンショット用に同期で数発話ぶん作る */
   iv = setInterval(() => { tick(); if (n > 60) clearInterval(iv); }, 400);
@@ -126,7 +122,6 @@ if (q.includes('en')) {
   document.querySelectorAll('[aria-label="字幕の種類"]').forEach(e => e.setAttribute('aria-label', 'Caption type'));
   document.querySelector('button[aria-label="字幕設定を開く"]').setAttribute('aria-label', 'Open caption settings');
 }
-if (q.includes('nobutton')) ccBtn.remove();   /* CC ボタンがメニュー内に隠れている最悪ケース */
 if (q.includes('ccoff')) {
   ccBtn.setAttribute('aria-label', q.includes('en') ? 'Turn on captions' : '字幕をオンにする');
   ccState.textContent = 'captions: off'; ccState.style.color = '#f88';

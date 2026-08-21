@@ -18,10 +18,6 @@
   var rowIds = new WeakMap();
   var seq = 0;
   var container = null;
-  var containerWeak = false;
-  var emptyChecks = 0;
-  var mismatchChecks = 0;
-  var mismatchLogged = false;
   var observer = null;
   var autoScroll = true;
   var logLines = [];
@@ -100,103 +96,44 @@
   applyFont();
 
   /* ---------------- caption DOM ----------------
-     難読化クラス名 (.a4cQT / .nMcdL など) は Meet の更新で変わるため一切使わない。
-     コンテナは aria-label / aria-live、行と話者名は DOM 構造だけで判定する。 */
+     難読化クラス名 (.a4cQT / .nMcdL など) は Meet の更新で変わるため使わない。
+     実機(CDP)で分岐カバレッジを計測し、実行された経路だけを残している。 */
 
-  /* 字幕リージョンの aria-label（UI 言語で変わる）。ボタン類は別途除外する */
-  var LABEL_EXACT = /^(字幕|キャプション|captions?|subtitles?|sous-titres|untertitel|subtítulos|legendas|자막|자막\s*표시|字幕記録)$/i;
-  var LABEL_LOOSE = /字幕|キャプション|caption|subtitle|sous-titre|untertitel|subtítulo|legenda|자막/i;
-  /* 「字幕をオンにする」などの操作系ラベルを弾く */
-  var LABEL_ACTION = /オンにする|オフにする|開く|閉じる|設定|変更|種類|翻訳|言語|移動|turn (on|off)|open|close|settings?|options?|more|type|language|translat/i;
-  var strategy = '';
-
-  function isInteractive(el) {
-    return !!el.closest('button,a,input,select,textarea,' +
-      '[role="button"],[role="link"],[role="menu"],[role="menubar"],[role="menuitem"],' +
-      '[role="menuitemcheckbox"],[role="menuitemradio"],[role="combobox"],[role="listbox"],' +
-      '[role="option"],[role="tablist"],[role="tab"],[role="tooltip"],[role="textbox"],' +
-      '[role="slider"],[role="checkbox"],[role="switch"],[role="radio"],[role="radiogroup"]');
-  }
-
-  function isVisible(el) {
-    var r = el.getBoundingClientRect();
-    return r.width > 40 && r.height > 10 && r.right > 0 && r.bottom > 0;
-  }
-
-  /* Meet はスクリーンリーダー用に画面外(-9999px)のライブリージョンを持つ。
-     「自動字幕起こしがオンになっています」等が入るだけなので字幕本体と混同しない */
-  function isAnnouncer(el) {
-    return el.matches('[role="status"],[role="alert"],[role="log"],[aria-atomic="true"],[data-mdc-dom-announce]') ||
-           !isVisible(el);
-  }
+  /* 字幕リージョンの aria-label。実測では ^字幕$ に一致する要素はページ内に 1 個だけで、
+     ボタン類(字幕をオフにする / 字幕設定を開く / 字幕の種類 …)は完全一致しないため除外不要 */
+  var LABEL_EXACT = /^(字幕|キャプション|captions?|subtitles?)$/i;
 
   function textLen(el) {
     return ((el.innerText || el.textContent || '').trim()).length;
   }
 
-  function labelCandidates(re) {
-    return [].filter.call(document.querySelectorAll('[aria-label]'), function (el) {
-      if (ov.contains(el) || isInteractive(el) || isRejected(el)) return false;
-      var label = el.getAttribute('aria-label') || '';
-      return re.test(label) && !LABEL_ACTION.test(label);
-    });
-  }
-
-  function pickBest(cands) {
-    /* aria-live を含むものを優先し、次にテキスト量が多いものを選ぶ */
-    var scored = cands.map(function (el) {
-      var live = el.matches('[aria-live]') ? !isAnnouncer(el)
-                 : [].some.call(el.querySelectorAll('[aria-live]'), function (x) { return !isAnnouncer(x); });
-      return { el: el, live: live ? 1 : 0, len: textLen(el) };
-    });
-    scored.sort(function (a, b) { return (b.live - a.live) || (b.len - a.len); });
-    return scored.length ? scored[0].el : null;
-  }
-
-  /* 弱い戦略(フォールバック)で掴んだが発話が取れなかった要素は除外していく */
-  var rejected = [];
-  function isRejected(el) { return rejected.indexOf(el) >= 0; }
-
   function findContainer() {
-    var byLabel = pickBest(labelCandidates(LABEL_EXACT));
-    if (byLabel) { strategy = 'aria-label 完全一致 ("' + byLabel.getAttribute('aria-label') + '")'; return byLabel; }
-
-    var loose = pickBest(labelCandidates(LABEL_LOOSE).filter(function (el) {
-      return el.matches('[aria-live]') || !!el.querySelector('[aria-live]') || textLen(el) > 0;
-    }));
-    if (loose) { strategy = 'aria-label 部分一致 ("' + loose.getAttribute('aria-label') + '")'; return loose; }
-
-    /* フォールバック1: 画面に見えているライブリージョンでテキスト量が最大のもの */
-    var live = [].filter.call(document.querySelectorAll('[aria-live="polite"],[aria-live="assertive"]'), function (el) {
-      return !ov.contains(el) && !isInteractive(el) && !isAnnouncer(el) && !isRejected(el) && textLen(el) > 0;
-    });
-    live.sort(function (a, b) { return textLen(b) - textLen(a); });
-    if (live.length) { strategy = 'aria-live フォールバック'; return live[0]; }
-
-    /* role=region による推測は行わない。実機で「会議の詳細」など無関係なリージョンを掴み、
-       静的なテキストを発話として表示してしまうため（字幕が見つからないほうが安全） */
-    strategy = '';
+    var els = document.querySelectorAll('[aria-label]');
+    for (var i = 0; i < els.length; i++) {
+      if (!ov.contains(els[i]) && LABEL_EXACT.test((els[i].getAttribute('aria-label') || '').trim())) {
+        return els[i];
+      }
+    }
     return null;
   }
 
   /* 字幕リージョンには「最新の字幕に移動」ボタン（内側に aria-hidden のアイコン文字や
      ツールチップ文字を持つ）が同居する。発話本文だけを取るため、aria-hidden と
      操作系要素の中のテキストは除外する */
-  function isAriaHidden(el) {
-    return !!el.closest('[aria-hidden="true"]');
-  }
-
   function contentLeaves(el) {
-    if (!el.children.length) {
-      return (textLen(el) > 0 && !isAriaHidden(el) && !isInteractive(el)) ? [el] : [];
-    }
     return [].filter.call(el.querySelectorAll('*'), function (x) {
-      return x.children.length === 0 && textLen(x) > 0 && !isAriaHidden(x) && !isInteractive(x);
+      return x.children.length === 0 && textLen(x) > 0 &&
+             !x.closest('[aria-hidden="true"]') && !x.closest('button,a,[role="button"]');
     });
   }
 
-  /* アバター画像と同じ枝にあるテキストは話者名（実測: img と名前 span が同じ親に入る）。
-     Meet のアバターは alt="" なので alt では判定できない */
+  /* 実測ではリージョン直下が [発話行…, 非表示の空 div, ジャンプボタン] の並び */
+  function findRows(c) {
+    return [].filter.call(c.children, function (el) { return contentLeaves(el).length > 0; });
+  }
+
+  /* アバター画像と同じ枝にあるテキストは話者名（実測: img と名前 span が同じ親に入る。
+     アバターは alt="" なので alt では判定できない） */
   function isNameLeaf(row, leaf) {
     for (var p = leaf.parentElement; p && p !== row; p = p.parentElement) {
       if (p.querySelector('img,[role="img"]')) return true;
@@ -204,69 +141,14 @@
     return false;
   }
 
-  /* Meet の「会議の言語」が話している言語と違うと、字幕は ON でもほとんど出ない
-     （英語設定のまま日本語で話すと無音同然になる）。起動時に必ずログへ出す */
-  function captionLanguage() {
-    var c = document.querySelector('[role="combobox"][aria-label*="会議の言語"],' +
-                                   '[role="combobox"][aria-label*="Meeting language"],' +
-                                   '[role="combobox"][aria-label*="言語"]');
-    if (!c) return '';
-    return (c.innerText || '').replace(/^\s*language\s*/i, '').replace(/\s+/g, ' ').trim();
-  }
-
-  function reportLanguage() {
-    var lang = captionLanguage();
-    if (!lang) { return; }
-    var uiJa = /^ja/i.test(document.documentElement.lang || navigator.language || '');
-    if (uiJa && !/日本語|Japanese/.test(lang)) {
-      log('注意: 会議の言語が「' + lang + '」です。日本語で話しても字幕が出ません。' +
-          'Meet の「字幕設定を開く」から会議の言語を日本語に変更してください。');
-    } else {
-      log('会議の言語: ' + lang);
-    }
-  }
-
-  function findRows(c) {
-    /* 字幕本体はライブリージョン内にある。無ければコンテナ自身を起点にする */
-    var live = c.matches('[aria-live]') && !isAnnouncer(c) ? c
-      : [].filter.call(c.querySelectorAll('[aria-live]'), function (x) { return !isAnnouncer(x); })[0];
-    var root = live || c;
-    /* 子が1つだけのラッパ階層を掘り下げて、発話が並ぶ親まで降りる */
-    while (root.children.length === 1 && root.firstElementChild.children.length) {
-      root = root.firstElementChild;
-    }
-    var rows = [].filter.call(root.children, function (el) { return contentLeaves(el).length > 0; });
-    if (!rows.length && contentLeaves(root).length > 0) rows = [root];
-    return rows;
-  }
-
   function parseRow(row) {
-    /* 本文を持つ末端要素を文書順に集める。先頭が話者名、残りが発話本文という構造を利用する
-       (行がさらに入れ子でも末端は同じ順に並ぶので深さに依存しない) */
     var leaves = contentLeaves(row);
-    var name = '', text = '';
-
-    if (leaves.length) {
-      var head = (leaves[0].innerText || '').trim();
-      /* アバターと同じ枝にある、または短い先頭要素を話者名とみなす */
-      if (isNameLeaf(row, leaves[0]) || (leaves.length >= 2 && head.length <= 30 && head.indexOf('\n') < 0)) {
-        name = head;
-        leaves = leaves.slice(1);
-      }
-      text = leaves.map(function (el) { return (el.innerText || '').trim(); }).join(' ');
-    } else {
-      /* 末端が取れない構造では innerText を行単位で分解する */
-      var all = (row.innerText || '').trim();
-      var nl = all.indexOf('\n');
-      if (nl > 0 && nl <= 30) { name = all.slice(0, nl).trim(); all = all.slice(nl + 1); }
-      text = all;
+    var name = '';
+    if (leaves.length && isNameLeaf(row, leaves[0])) {
+      name = (leaves[0].innerText || '').trim();
+      leaves = leaves.slice(1);
     }
-
-    if (!name) {
-      var av = row.querySelector('img[alt]');
-      if (av && av.alt && av.alt.trim().length <= 30) name = av.alt.trim();
-    }
-    if (name && text.indexOf(name) === 0) text = text.slice(name.length).trim();
+    var text = leaves.map(function (el) { return (el.innerText || '').trim(); }).join(' ');
     return { name: name.replace(/\s*\n\s*/g, ' '), text: text.replace(/\s*\n\s*/g, ' ').trim() };
   }
 
@@ -280,9 +162,9 @@
 
   function isContinuation(oldText, newText) {
     if (!oldText || !newText) return true;
-    if (newText.indexOf(oldText) === 0 || oldText.indexOf(newText) === 0) return true;
+    if (newText.indexOf(oldText) === 0) return true;                 /* 伸びた */
     var pre = commonPrefixLen(oldText, newText);
-    return pre >= 6 || pre >= Math.min(oldText.length, newText.length) * 0.5;
+    return pre >= 6 || pre >= Math.min(oldText.length, newText.length) * 0.5;  /* 末尾だけ書き換わった */
   }
 
   function addEntry(p, row) {
@@ -321,9 +203,8 @@
         container = c;
         if (observer) { observer.disconnect(); observer = null; }
         if (container) {
-          containerWeak = strategy.indexOf('フォールバック') >= 0;
-          emptyChecks = 0;
-          log('字幕コンテナを検出 [' + strategy + '] <' + container.tagName.toLowerCase() + '>');
+          log('字幕コンテナを検出: <' + container.tagName.toLowerCase() +
+              ' aria-label="' + container.getAttribute('aria-label') + '">');
           observer = new MutationObserver(function () { sync(); });
           observer.observe(container, { childList: true, subtree: true, characterData: true });
         }
@@ -332,31 +213,6 @@
     }
 
     var rows = findRows(container);
-    if (!rows.length) {
-      /* フォールバックで掴んだだけの要素が字幕でなかった場合は候補から外して再検出する */
-      if (containerWeak && ++emptyChecks >= 4) {
-        log('[' + strategy + '] の候補から発話が取れないため除外して再検出します');
-        rejected.push(container);
-        if (observer) { observer.disconnect(); observer = null; }
-        container = null;
-        return;
-      }
-    } else {
-      emptyChecks = 0;
-    }
-
-    /* 自己診断: コンテナにテキストがあるのに 1 件も取り込めていない状態が続いたら、
-       原因調査用にコンテナの生テキストをログへ残す（一度だけ） */
-    if (!mismatchLogged && !entries.length && textLen(container) > 0) {
-      if (++mismatchChecks >= 4) {
-        mismatchLogged = true;
-        log('取りこぼしの可能性: コンテナに ' + textLen(container) + ' 文字あるが取り込み 0 件。' +
-            '生テキスト="' + (container.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60) + '"' +
-            ' / 行数=' + rows.length);
-      }
-    } else if (entries.length) {
-      mismatchChecks = 0;
-    }
     var stick = autoScroll && nearBottom();
     var changed = false;
 
@@ -365,16 +221,6 @@
       if (!p.text) return;
       var id = rowIds.get(row);
       if (id === undefined) {
-        /* 同じ発話の DOM が作り直された場合は直前のエントリを更新扱いにする */
-        var last = entries[entries.length - 1];
-        if (last && last.name === p.name && !document.contains(last.row) &&
-            isContinuation(last.text, p.text)) {
-          rowIds.set(row, last.id);
-          last.row = row;
-          if (last.text !== p.text) { last.text = p.text; last.textEl.textContent = p.text; changed = true; }
-          if (p.name && last.name !== p.name) { last.name = p.name; last.nameEl.textContent = p.name; changed = true; }
-          return;
-        }
         id = addEntry(p, row).id;
         changed = true;
         log('新しい発話 #' + id + ' ' + (p.name || '(名前不明)'));
