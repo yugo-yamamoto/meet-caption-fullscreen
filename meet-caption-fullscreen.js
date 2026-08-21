@@ -57,7 +57,7 @@
 
   var ov = el('div', { id: ID });
   var bar = el('div', { id: 'mcf-bar' }, ov);
-  [['minus', 'A-'], ['plus', 'A+'], ['cc', '\u5b57\u5e55ON'], ['copy', '\u5168\u6587\u30b3\u30d3\u30fc'], ['clear', '\u5c65\u6b74\u30af\u30ea\u30a2'],
+  [['minus', 'A-'], ['plus', 'A+'], ['copy', '\u5168\u6587\u30b3\u30d3\u30fc'], ['clear', '\u5c65\u6b74\u30af\u30ea\u30a2'],
    ['log', '\u30ed\u30b0\u8868\u793a'], ['copylog', '\u30ed\u30b0\u30b3\u30d4\u30fc'], ['close', '\u9589\u3058\u308b (Esc)']]
     .forEach(function (b) { el('button', { 'data-a': b[0], text: b[1] }, bar); });
   var stat = el('span', { 'class': 'mcf-stat' }, bar);
@@ -166,10 +166,6 @@
     }));
     if (loose) { strategy = 'aria-label 部分一致 ("' + loose.getAttribute('aria-label') + '")'; return loose; }
 
-    /* 字幕が OFF のうちは（「字幕をオンにする」ボタンが存在する間は）曖昧なフォールバックを
-       使わない。無関係なリージョンを掴んで CC の自動 ON を妨げるのを防ぐ */
-    if (findCaptionButton()) { strategy = ''; return null; }
-
     /* フォールバック1: 画面に見えているライブリージョンでテキスト量が最大のもの */
     var live = [].filter.call(document.querySelectorAll('[aria-live="polite"],[aria-live="assertive"]'), function (el) {
       return !ov.contains(el) && !isInteractive(el) && !isAnnouncer(el) && !isRejected(el) && textLen(el) > 0;
@@ -181,50 +177,6 @@
        静的なテキストを発話として表示してしまうため（字幕が見つからないほうが安全） */
     strategy = '';
     return null;
-  }
-
-  /* 「字幕をオンにする」系のボタン。OFF 側("オフにする")を押さないよう厳密に見る */
-  var BTN_ON = /オンにする|表示する|turn on|enable|activate/i;
-  var BTN_OFF = /オフにする|非表示|turn off|disable|deactivate/i;
-  var ccTries = 0;
-  var ccLast = 0;
-
-  function findCaptionButton() {
-    var btns = document.querySelectorAll('button,[role="button"],[role="menuitem"],[role="checkbox"],[role="switch"]');
-    return [].filter.call(btns, function (el) {
-      if (ov.contains(el) || el.disabled) return false;
-      var label = (el.getAttribute('aria-label') || el.getAttribute('data-tooltip') || el.title || '').trim();
-      if (!label || !LABEL_LOOSE.test(label)) return false;
-      return BTN_ON.test(label) && !BTN_OFF.test(label);
-    })[0] || null;
-  }
-
-  /* 字幕が OFF のときは CC ボタンを押して ON にする。
-     実機では Meet 側の反映に数秒かかることがあり、短い間隔で押すと ON→OFF に戻してしまう。
-     そのため間隔は 8 秒、自動は 2 回まで（ラベルが「オフにする」に変われば
-     findCaptionButton() が null を返すので、それ以上は押さない） */
-  function enableCaptions(manual) {
-    var now = Date.now();
-    if (!manual) {
-      if (ccTries >= 2) return false;
-      if (now - ccLast < 8000) return false;
-    }
-    var btn = findCaptionButton();
-    if (!btn) {
-      if (manual) log('「字幕をオンにする」ボタンが見つかりません（既に ON か、メニュー内に隠れています）');
-      return false;
-    }
-    ccLast = now;
-    ccTries++;
-    var label = btn.getAttribute('aria-label') || btn.title || '';
-    try {
-      btn.click();
-      log('字幕を ON にするボタンを押しました: "' + label + '"' + (manual ? ' (手動)' : ' (自動 ' + ccTries + '/2)'));
-      return true;
-    } catch (e) {
-      log('字幕ボタンのクリックに失敗: ' + e.message);
-      return false;
-    }
   }
 
   /* 字幕リージョンには「最新の字幕に移動」ボタン（内側に aria-hidden のアイコン文字や
@@ -376,12 +328,11 @@
           observer.observe(container, { childList: true, subtree: true, characterData: true });
         }
       }
-      if (!container) { enableCaptions(false); return; }
+      if (!container) return;
     }
 
     var rows = findRows(container);
     if (!rows.length) {
-      enableCaptions(false);
       /* フォールバックで掴んだだけの要素が字幕でなかった場合は候補から外して再検出する */
       if (containerWeak && ++emptyChecks >= 4) {
         log('[' + strategy + '] の候補から発話が取れないため除外して再検出します');
@@ -480,7 +431,6 @@
     if (!a) return;
     if (a === 'plus') { fontSize = Math.min(160, fontSize + 4); applyFont(); log('文字サイズ ' + fontSize + 'px'); }
     else if (a === 'minus') { fontSize = Math.max(14, fontSize - 4); applyFont(); log('文字サイズ ' + fontSize + 'px'); }
-    else if (a === 'cc') { ccTries = 0; if (enableCaptions(true)) setTimeout(sync, 800); }
     else if (a === 'copy') { copy(transcript(), '字幕全文'); }
     else if (a === 'copylog') { copy(logLines.join('\n'), 'ログ'); }
     else if (a === 'clear') {
@@ -514,8 +464,8 @@
     sync();
     if (!container && !noticeShown && Date.now() - startedAt > 8000) {
       noticeShown = true;
-      log('字幕エリアが見つかりません。Meet 右下の「その他のオプション」→「字幕を表示」から ON にしてください。');
-      empty.textContent = '字幕エリアが見つかりません。Meet 側で字幕(CC)を ON にしてから「字幕ON」を押してください。';
+      log('字幕エリアが見つかりません。Meet の字幕(CC)ボタン、または「その他のオプション」→「字幕を表示」から ON にしてください。');
+      empty.textContent = '字幕エリアが見つかりません。Meet 側で字幕(CC)を ON にしてください。';
     }
     if (container && noticeShown) { noticeShown = false; }
   }, 700);
@@ -527,7 +477,7 @@
     ov.remove(); css.remove();
   };
 
-  log('起動しました。字幕が OFF なら自動で ON にします。');
+  log('起動しました。Meet 側で字幕(CC)を ON にしてください。');
   reportLanguage();
   sync();
 })();
