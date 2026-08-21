@@ -107,6 +107,25 @@
     return ((el.innerText || el.textContent || '').trim()).length;
   }
 
+  /* Meet の「会議の言語」が話す言語と違うと、字幕は ON でもほとんど出ない。
+     読み取って知らせるだけで、設定は変更しない（ON と言語は利用者が Meet 側で操作する） */
+  function captionLanguage() {
+    var c = document.querySelector('[role="combobox"][aria-label*="会議の言語"],' +
+                                   '[role="combobox"][aria-label*="Meeting language"]');
+    return c ? (c.innerText || '').replace(/^\s*language\s*/i, '').replace(/\s+/g, ' ').trim() : '';
+  }
+
+  function reportLanguage() {
+    var lang = captionLanguage();
+    if (!lang) return;
+    if (/^ja/i.test(document.documentElement.lang || navigator.language || '') && !/日本語|Japanese/.test(lang)) {
+      log('注意: 会議の言語が「' + lang + '」です。日本語で話しても字幕が出ません。' +
+          'Meet の「字幕設定を開く」から会議の言語を日本語に変更してください。');
+    } else {
+      log('会議の言語: ' + lang);
+    }
+  }
+
   function findContainer() {
     var els = document.querySelectorAll('[aria-label]');
     for (var i = 0; i < els.length; i++) {
