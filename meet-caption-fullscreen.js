@@ -20,6 +20,8 @@
   var container = null;
   var containerWeak = false;
   var emptyChecks = 0;
+  var mismatchChecks = 0;
+  var mismatchLogged = false;
   var observer = null;
   var autoScroll = true;
   var logLines = [];
@@ -390,6 +392,19 @@
       }
     } else {
       emptyChecks = 0;
+    }
+
+    /* 自己診断: コンテナにテキストがあるのに 1 件も取り込めていない状態が続いたら、
+       原因調査用にコンテナの生テキストをログへ残す（一度だけ） */
+    if (!mismatchLogged && !entries.length && textLen(container) > 0) {
+      if (++mismatchChecks >= 4) {
+        mismatchLogged = true;
+        log('取りこぼしの可能性: コンテナに ' + textLen(container) + ' 文字あるが取り込み 0 件。' +
+            '生テキスト="' + (container.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60) + '"' +
+            ' / 行数=' + rows.length);
+      }
+    } else if (entries.length) {
+      mismatchChecks = 0;
     }
     var stick = autoScroll && nearBottom();
     var changed = false;
