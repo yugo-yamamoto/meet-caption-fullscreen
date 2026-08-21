@@ -99,9 +99,11 @@
      難読化クラス名 (.a4cQT / .nMcdL など) は Meet の更新で変わるため使わない。
      実機(CDP)で分岐カバレッジを計測し、実行された経路だけを残している。 */
 
-  /* 字幕リージョンの aria-label。実測では ^字幕$ に一致する要素はページ内に 1 個だけで、
-     ボタン類(字幕をオフにする / 字幕設定を開く / 字幕の種類 …)は完全一致しないため除外不要 */
-  var LABEL_EXACT = /^(字幕|キャプション|captions?|subtitles?)$/i;
+  /* 字幕リージョンの aria-label。実測値は日本語 UI が「字幕」、英語 UI が「Captions」。
+     完全一致する要素はページ内に 1 個だけで、ボタン類（字幕をオフにする / 字幕設定を開く /
+     字幕の種類 / Turn off captions / Open caption settings / Caption type …）は
+     完全一致しないため除外処理は不要 */
+  var LABEL_EXACT = /^(字幕|captions)$/i;
 
   function textLen(el) {
     return ((el.innerText || el.textContent || '').trim()).length;
