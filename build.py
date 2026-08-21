@@ -1,7 +1,7 @@
 # /// script
 # dependencies = []
 # ///
-"""meet-caption-fullscreen.js から bookmarklet.txt と docs/index.html (GitHub Pages) を生成する。
+"""meet-caption-fullscreen.js から docs/index.html (GitHub Pages) を生成する。
    使い方: uv run build.py
 
    GitHub の README は javascript: リンクをサニタイズするため、ドラッグ用リンクは
@@ -21,7 +21,6 @@ mini = re.sub(r'/\*.*?\*/', '', src, flags=re.S)
 mini = '\n'.join(ln.strip() for ln in mini.split('\n') if ln.strip())
 
 url = 'javascript:' + urllib.parse.quote(mini, safe="!~*'()")
-open('bookmarklet.txt', 'w', encoding='utf-8').write(url)
 
 page = '''<meta charset="utf-8"><title>Meet 字幕フルスクリーン</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -36,16 +35,17 @@ button{padding:8px 16px;font-size:14px;border-radius:6px;border:1px solid #999;b
 kbd{background:#f1f3f4;border:1px solid #ccc;border-radius:4px;padding:0 5px;font-size:13px}
 </style>
 <h1>Meet 字幕フルスクリーン</h1>
-<p>Google Meet の字幕エリアだけを全画面に拡大表示するブックマークレットです。
+<p>Google Meet の字幕エリアだけをブラウザ画面いっぱいに拡大表示するブックマークレットです。
 下のボタンを<strong>ブックマークバーへドラッグ＆ドロップ</strong>してください。</p>
 <p><a class="bm" href="__HREF__">Meet 字幕フルスクリーン</a></p>
 <p class="hint">クリックしても実行されません。ブックマークバーへのドラッグ用リンクです。</p>
 
 <h2>使い方</h2>
 <ol>
-<li>Google Meet で会議に参加し、字幕(CC)を ON にする</li>
+<li>Google Meet で会議に参加する</li>
+<li>Meet 側で字幕(CC)を ON にし、<code>字幕設定を開く</code> → <code>会議の言語</code> を話す言語に合わせる</li>
 <li>ブックマークバーの「Meet 字幕フルスクリーン」をクリック</li>
-<li>終了は <kbd>Esc</kbd>（全画面解除）→「閉じる」、またはブックマークを再クリック</li>
+<li>終了は <kbd>Esc</kbd>、「閉じる」ボタン、またはブックマークを再クリック</li>
 </ol>
 
 <h2>できること</h2>
@@ -88,5 +88,5 @@ open('docs/.nojekyll', 'w', encoding='utf-8').write('')
 
 print('source : %d chars' % len(src))
 print('minified: %d chars' % len(mini))
-print('bookmarklet: %d chars -> bookmarklet.txt, docs/index.html' % len(url))
+print('bookmarklet: %d chars -> docs/index.html' % len(url))
 print('pages url: %s' % PAGES_URL)

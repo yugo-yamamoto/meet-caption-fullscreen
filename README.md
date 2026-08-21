@@ -12,7 +12,7 @@ Meet 標準の字幕は数行で流れて消えてしまうため、字幕を大
 > [!NOTE]
 > GitHub は README 内の `javascript:` リンクをサニタイズして無効化するため、
 > ドラッグ用のリンクはこの README には埋め込めません。上記の GitHub Pages 上のページから登録してください。
-> ドラッグを使わない場合は [`bookmarklet.txt`](bookmarklet.txt) の中身をコピーし、
+> ドラッグを使わない場合は、同じページの「手動インストール」欄にあるコードをコピーし、
 > ブックマークマネージャで新規ブックマークの URL 欄に貼り付けてもインストールできます。
 
 ## 前提: 字幕の ON と言語設定は Meet 側で行ってください
@@ -108,12 +108,12 @@ Meet は発話中の行の DOM ノードを再利用してテキストを書き�
 ## 開発
 
 ```bash
-# ソースを編集したら再ビルド（bookmarklet.txt と docs/index.html を再生成）
+# ソースを編集したら再ビルド（docs/index.html を再生成）
 uv run build.py
 ```
 
 - `meet-caption-fullscreen.js` — 本体（編集はここだけ）
-- `build.py` — コメント除去 → URL エンコード → `bookmarklet.txt` / `docs/index.html` を生成
+- `build.py` — コメント除去 → URL エンコード → `docs/index.html` を生成
 - `docs/` — GitHub Pages 用のインストールページ（Settings → Pages で `main` / `docs` を指定）
 
 ### 動作確認
