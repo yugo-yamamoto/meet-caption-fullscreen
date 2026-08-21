@@ -197,12 +197,15 @@
     })[0] || null;
   }
 
-  /* 字幕が OFF のときは CC ボタンを押して ON にする（最大 3 回、3 秒間隔） */
+  /* 字幕が OFF のときは CC ボタンを押して ON にする。
+     実機では Meet 側の反映に数秒かかることがあり、短い間隔で押すと ON→OFF に戻してしまう。
+     そのため間隔は 8 秒、自動は 2 回まで（ラベルが「オフにする」に変われば
+     findCaptionButton() が null を返すので、それ以上は押さない） */
   function enableCaptions(manual) {
     var now = Date.now();
     if (!manual) {
-      if (ccTries >= 3) return false;
-      if (now - ccLast < 3000) return false;
+      if (ccTries >= 2) return false;
+      if (now - ccLast < 8000) return false;
     }
     var btn = findCaptionButton();
     if (!btn) {
@@ -214,7 +217,7 @@
     var label = btn.getAttribute('aria-label') || btn.title || '';
     try {
       btn.click();
-      log('字幕が OFF だったので ON にしました: "' + label + '"' + (manual ? '' : ' (自動 ' + ccTries + '/3)'));
+      log('字幕を ON にするボタンを押しました: "' + label + '"' + (manual ? ' (手動)' : ' (自動 ' + ccTries + '/2)'));
       return true;
     } catch (e) {
       log('字幕ボタンのクリックに失敗: ' + e.message);
