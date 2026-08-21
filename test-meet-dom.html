@@ -54,7 +54,19 @@ function tick() {
   n++;
   buf += WORDS[n % WORDS.length].slice(0, 8);
   span.textContent = buf;
-  if (n % 4 === 0) { buf = ''; span = newRow(SPEAKERS[(n / 4) % 2]); }
+  if (n % 4 === 0) {
+    buf = '';
+    if (q.includes('recycle')) {
+      /* Meet が同じ行ノードを再利用して別の発話に差し替えるケースの再現。
+         DOM ノードは変えずに話者名と本文だけを丸ごと置き換える */
+      const row = inner.querySelectorAll('.nMcdL')[0];
+      row.querySelector('.KcIKyf span').textContent = SPEAKERS[(n / 4) % 2];
+      span = row.querySelector('.ygicle');
+      span.textContent = '';
+    } else {
+      span = newRow(SPEAKERS[(n / 4) % 2]);
+    }
+  }
 }
 /* 実測どおり: role="region" + aria-label="字幕"、内側に aria-live は無い。
    「最新の字幕に移動」ボタンがリージョン内に同居する */

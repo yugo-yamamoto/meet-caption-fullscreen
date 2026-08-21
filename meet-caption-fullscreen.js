@@ -284,6 +284,29 @@
     return { name: name.replace(/\s*\n\s*/g, ' '), text: text.replace(/\s*\n\s*/g, ' ').trim() };
   }
 
+  /* Meet は認識確定にあわせて末尾を書き換えつつ伸ばしていくので、先頭が保たれている限り
+     同一発話とみなす。行ノードが別発話に再利用された場合は先頭から変わるので別発話として切る */
+  function commonPrefixLen(a, b) {
+    var n = Math.min(a.length, b.length), i = 0;
+    while (i < n && a.charCodeAt(i) === b.charCodeAt(i)) i++;
+    return i;
+  }
+
+  function isContinuation(oldText, newText) {
+    if (!oldText || !newText) return true;
+    if (newText.indexOf(oldText) === 0 || oldText.indexOf(newText) === 0) return true;
+    var pre = commonPrefixLen(oldText, newText);
+    return pre >= 6 || pre >= Math.min(oldText.length, newText.length) * 0.5;
+  }
+
+  function addEntry(p, row) {
+    var e = { id: ++seq, name: p.name, text: p.text, row: row };
+    rowIds.set(row, e.id);
+    entries.push(e);
+    body.appendChild(makeEntryEl(e));
+    return e;
+  }
+
   function makeEntryEl(e) {
     var wrap = document.createElement('div');
     wrap.className = 'mcf-e';
@@ -333,18 +356,14 @@
         /* 同じ発話の DOM が作り直された場合は直前のエントリを更新扱いにする */
         var last = entries[entries.length - 1];
         if (last && last.name === p.name && !document.contains(last.row) &&
-            (p.text.indexOf(last.text) === 0 || last.text.indexOf(p.text) === 0)) {
+            isContinuation(last.text, p.text)) {
           rowIds.set(row, last.id);
           last.row = row;
           if (last.text !== p.text) { last.text = p.text; last.textEl.textContent = p.text; changed = true; }
           if (p.name && last.name !== p.name) { last.name = p.name; last.nameEl.textContent = p.name; changed = true; }
           return;
         }
-        id = ++seq;
-        rowIds.set(row, id);
-        var e = { id: id, name: p.name, text: p.text, row: row };
-        entries.push(e);
-        body.appendChild(makeEntryEl(e));
+        id = addEntry(p, row).id;
         changed = true;
         log('新しい発話 #' + id + ' ' + (p.name || '(名前不明)'));
       } else {
@@ -352,8 +371,19 @@
         for (var i = entries.length - 1; i >= 0; i--) { if (entries[i].id === id) { cur = entries[i]; break; } }
         if (!cur) return;
         cur.row = row;
-        if (cur.text !== p.text) { cur.text = p.text; cur.textEl.textContent = p.text; changed = true; }
-        if (p.name && cur.name !== p.name) { cur.name = p.name; cur.nameEl.textContent = p.name; changed = true; }
+        if (cur.text !== p.text) {
+          if (!isContinuation(cur.text, p.text) || (p.name && cur.name && p.name !== cur.name)) {
+            /* Meet が行ノードを再利用して別の発話を流し込んだ。前の発話は履歴に残して切り出す */
+            var ne = addEntry(p, row);
+            log('行の再利用を検出したので新規化 #' + ne.id + ' ' + (p.name || '(名前不明)'));
+          } else {
+            cur.text = p.text; cur.textEl.textContent = p.text;
+            if (p.name && cur.name !== p.name) { cur.name = p.name; cur.nameEl.textContent = p.name; }
+          }
+          changed = true;
+        } else if (p.name && cur.name !== p.name) {
+          cur.name = p.name; cur.nameEl.textContent = p.name; changed = true;
+        }
       }
     });
 
